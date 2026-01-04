@@ -1,225 +1,189 @@
 import time
-import math
 import keyboard
 import rust_motor 
 from evdev import InputDevice, list_devices, ecodes
-from utils.config import load_config
 import sys
-from backend.inputs import InputPhysics
+import traceback
+import pyautogui
+import os
+
 from backend.tracker import HeadTracker
 from frontend.hud import JoystickHUD
 
 class JoystickBackend:
     def __init__(self, config):
         self.config = config
-        
-        import pyautogui
         self.screen_w, self.screen_h = pyautogui.size()
         
-        self.virtual_x = self.screen_w // 2
-        self.virtual_y = self.screen_h // 2
-        self.center_x = self.screen_w // 2
-        self.center_y = self.screen_h // 2
+        print(f"[MOTOR] Preparando RustEngine asíncrono...", flush=True)
+        self.engine = rust_motor.RustEngine()
         
-        self.hard_limit = config['radius'] + config['outer']
-        self.throttle = 0.0 
-        self.rudder = 0.0   
-        self.last_rudder_time = 0 
+        self.engine.update_config(
+            float(config['radius']), 
+            float(config['curve']), 
+            float(config['deadzone']),
+            float(config.get('t_snap_axis', 0.1)), 
+            float(config.get('snap', 0.05)), 
+            float(config.get('outer', 0.0))
+        )
         
-        # --- ESTADO DE BOTONES ---
-        self.btn_trigger = False # Click Izquierdo
-        self.btn_thumb = False   # Click Derecho
-        self.btn_top = False     # Click Central
-        
-        # --- NUEVOS BOTONES ---
-        self.btn_side1 = False   # Botón Lateral (Atrás)
-        self.btn_side2 = False   # Botón Lateral (Adelante)
-        
-        self.rust_joy = None 
-        self.mouse_dev = None 
         self.tracker = None
         self.hud = None 
 
-    def find_mouse_device(self):
-        # ... (Tu código de búsqueda mejorado que ya funciona, NO LO CAMBIES) ...
-        # (Copia el método find_mouse_device que te di en el mensaje anterior)
-        print("\n--- BUSCANDO MOUSE FÍSICO (FILTRADO ESTRICTO) ---", flush=True)
+    def find_devices(self):
+        print("\n--- BUSCANDO HARDWARE (HEURÍSTICA V2) ---", flush=True)
+        mouse_path = None
+        kb_path = None
+        
         try:
-            paths = list_devices()
-            devices = [InputDevice(path) for path in paths]
-        except OSError: return None
-        
-        candidates = []
-        for dev in devices:
-            caps = dev.capabilities()
-            if ecodes.EV_REL not in caps: continue
-            rel_props = caps[ecodes.EV_REL]
-            if ecodes.REL_X not in rel_props or ecodes.REL_Y not in rel_props: continue
-            if ecodes.EV_KEY in caps and ecodes.BTN_LEFT in caps[ecodes.EV_KEY]:
-                candidates.append(dev)
+            device_paths = list_devices()
+        except Exception as e:
+            print(f"❌ Error al listar dispositivos: {e}")
+            return None, None
 
-        if not candidates: 
-            print("❌ No se encontraron mouses con ejes X/Y.", flush=True)
-            return None
-        
-        best = None
-        for dev in candidates:
-            n = dev.name.lower()
-            if "virtual" in n or "rust" in n: continue
-            if "razer" in n:
-                best = dev
-                break
-            if "logitech" in n and best is None: best = dev
-            if "mouse" in n and best is None: best = dev
+        # Prioridad de marcas conocidas para el mouse (Gaming)
+        gaming_brands = ["razer", "logitech", "corsair", "steelseries", "zowie", "benq"]
 
-        if best is None and candidates: best = candidates[0]
-        if best: print(f"✅ SELECCIONADO PARA SECUESTRO: {best.name}", flush=True)
-        return best
+        found_mice = []
+
+        for path in device_paths:
+            try:
+                dev = InputDevice(path)
+                n = dev.name.lower()
+                
+                if "virtual" in n or "rust" in n or "uinput" in n:
+                    continue
+                
+                caps = dev.capabilities()
+
+                # 1. Identificar Teclado REAL (Debe tener teclas estándar y NO ser mouse)
+                if not kb_path:
+                    if ecodes.EV_KEY in caps and ecodes.KEY_P in caps[ecodes.EV_KEY]:
+                        # Si el nombre contiene "mouse", probablemente es la interfaz RGB del teclado, la ignoramos
+                        if "mouse" not in n:
+                            kb_path = path
+                            print(f"  [OK] Teclado Real: {dev.name} -> {path}")
+
+                # 2. Identificar Mouses potenciales
+                if ecodes.EV_REL in caps and ecodes.REL_X in caps[ecodes.EV_REL]:
+                    if ecodes.EV_KEY in caps and ecodes.BTN_LEFT in caps[ecodes.EV_KEY]:
+                        # Puntuamos el mouse: si es de marca gaming, va primero
+                        score = 0
+                        if any(brand in n for brand in gaming_brands): score += 10
+                        if "keyboard" in n or "alloy" in n: score -= 5 # Bajamos puntos a interfaces de teclado
+                        
+                        found_mice.append({
+                            'path': path,
+                            'name': dev.name,
+                            'score': score
+                        })
+
+            except:
+                continue
+
+        # Seleccionamos el mejor mouse basado en el score
+        if found_mice:
+            # Ordenar por score descendente
+            found_mice.sort(key=lambda x: x['score'], reverse=True)
+            best_mouse = found_mice[0]
+            mouse_path = best_mouse['path']
+            print(f"  [OK] Mouse Seleccionado: {best_mouse['name']} -> {mouse_path} (Score: {best_mouse['score']})")
+            
+            # Si el teclado falló, usamos el mouse como respaldo para los eventos
+            if not kb_path:
+                kb_path = mouse_path
+                print(f"  [!] Usando mouse como fuente de teclado (Fallback)")
+
+        return mouse_path, kb_path
 
     def run(self):
-        try: 
-            print("[MOTOR] Iniciando dispositivo virtual Rust...", flush=True)
-            self.rust_joy = rust_motor.RustJoystick() 
-        except Exception as e:
-            print(f"[ERROR] Fallo en motor Rust: {e}", flush=True)
-            return "EXIT"
+        if os.name == 'posix':
+            os.system("stty -echo")
 
-        self.mouse_dev = self.find_mouse_device()
-        if not self.mouse_dev:
-            print("[ERROR] No se encontró mouse válido.", flush=True)
-            time.sleep(2)
-            return "EXIT"
+        # Buscamos el mouse (kb_path ya no es necesario aquí)
+        mouse_path, _ = self.find_devices()
         
-        try:
-            self.mouse_dev.grab() 
-            print(f"[MOTOR] Mouse {self.mouse_dev.name} SECUESTRADO exitosamente.", flush=True)
-        except Exception as e:
-            print(f"[ERROR] No se pudo capturar mouse: {e}", flush=True)
-            return "RESTART"
+        if not mouse_path:
+            print("❌ ERROR: No se encontró un Mouse compatible.")
+            return "EXIT"
 
+        # Inicialización de HUD y Tracker
         try: self.hud = JoystickHUD(self.config['radius'])
         except: pass
+        self.tracker = HeadTracker(source=0, config=self.config, show_debug=False)
 
-        print("[MOTOR] Iniciando Head Tracker...", flush=True)
-        self.tracker = HeadTracker(source=0, config=self.config, show_debug=False) 
-        
-        print(f"\n--- VUELO INICIADO (MOTOR RUST ACTIVO) ---", flush=True)
+        print(f"\n>>> INICIANDO HILO DE ALTO RENDIMIENTO (RUST) <<<", flush=True)
+        try:
+            # Iniciamos Rust (asegúrate de que la firma de start en engine.rs coincida)
+            self.engine.start(str(mouse_path), float(self.screen_w), float(self.screen_h))
+            print("    [HILO RUST LANZADO EXITOSAMENTE]", flush=True)
+        except Exception as e:
+            print(f"❌ FATAL: Rust rechazó iniciar: {e}")
+            return "EXIT"
+
+        print("    [ALT+P] Configurar | [ALT+<] Recentrar", flush=True)
         
         try:
             while True:
-                if keyboard.is_pressed('alt') and keyboard.is_pressed('p'): return "RESTART"
-
-                if (keyboard.is_pressed('alt') or keyboard.is_pressed('windows')) and \
-                   (keyboard.is_pressed('<') or keyboard.is_pressed('|') or keyboard.is_pressed('\\')):
-                    self.virtual_x = self.center_x
-                    self.virtual_y = self.center_y
-                    self.rudder = 0.0 
-                    if self.tracker: self.tracker.recenter()
-
-                # --- LECTURA DE EVENTOS ---
-                while True:
-                    try: event = self.mouse_dev.read_one()
-                    except OSError: return "EXIT"
-                    if event is None: break 
+                # --- 1. ATAJOS (Gestionados por Python) ---
+                
+                # Salida: ALT + P
+                if keyboard.is_pressed('alt') and keyboard.is_pressed('p'):
+                    print("[MOTOR] Solicitando salida...", flush=True)
+                    self.engine.request_exit()
+                    time.sleep(0.2)
+                    return "RESTART"
+                
+                # Recentrar: (ALT o WIN) + <
+                # Usamos scancode 86 (teclado ISO/Español) y 43 (teclado US) como enteros
+                try:
+                    is_alt_win = keyboard.is_pressed('alt') or keyboard.is_pressed('windows')
+                    # Probamos la tecla física directa
+                    is_recenter_key = keyboard.is_pressed('<') or keyboard.is_pressed(86) or keyboard.is_pressed(43)
                     
-                    if event.type == ecodes.EV_REL:
-                        if event.code == ecodes.REL_X: self.virtual_x += event.value
-                        elif event.code == ecodes.REL_Y: self.virtual_y += event.value
-                        elif event.code == ecodes.REL_WHEEL:
-                            self.throttle = max(min(self.throttle + (event.value * 0.05), 1.0), -1.0)
-                        elif event.code == ecodes.REL_HWHEEL:
-                            self.last_rudder_time = time.time()
-                            self.rudder = max(min(self.rudder + (event.value * 0.20), 1.0), -1.0)
-                    
-                    # --- AQUÍ AÑADIMOS LOS NUEVOS BOTONES ---
-                    elif event.type == ecodes.EV_KEY:
-                        is_pressed = (event.value > 0)
-                        if event.code == ecodes.BTN_LEFT: self.btn_trigger = is_pressed
-                        elif event.code == ecodes.BTN_RIGHT: self.btn_thumb = is_pressed
-                        elif event.code == ecodes.BTN_MIDDLE: self.btn_top = is_pressed
-                        
-                        # Botones laterales (Suelen ser estos códigos)
-                        elif event.code == ecodes.BTN_SIDE: self.btn_side1 = is_pressed
-                        elif event.code == ecodes.BTN_EXTRA: self.btn_side2 = is_pressed
+                    if is_alt_win and is_recenter_key:
+                        self.engine.recenter()
+                        if self.tracker: 
+                            self.tracker.recenter()
+                        print("[MOTOR] Recentrado.", flush=True)
+                        time.sleep(0.2)
+                except:
+                    pass # Evitar que un error de mapeo de tecla rompa el bucle
 
-                # Límites y Física
-                self.virtual_x = max(min(self.virtual_x, self.screen_w), 0)
-                self.virtual_y = max(min(self.virtual_y, self.screen_h), 0)
-
-                if (time.time() - self.last_rudder_time) > 0.15:
-                    if abs(self.rudder) > 0.01:
-                        self.rudder -= math.copysign(0.04, self.rudder)
-                    else: self.rudder = 0.0
-
-                delta_x = self.virtual_x - self.center_x
-                delta_y = self.virtual_y - self.center_y
+                # Verificar si Rust sigue vivo
+                if not self.engine.is_running(): 
+                    return "RESTART"
                 
-                axis_limit = self.hard_limit
-                
-                clamped_x = False
-                clamped_y = False
-
-                if abs(delta_x) > axis_limit:
-                    delta_x = math.copysign(axis_limit, delta_x)
-                    self.virtual_x = int(self.center_x + delta_x)
-                    clamped_x = True
-                
-                if abs(delta_y) > axis_limit:
-                    delta_y = math.copysign(axis_limit, delta_y)
-                    self.virtual_y = int(self.center_y + delta_y)
-                    clamped_y = True
-
-                final_x, final_y, stats = InputPhysics.calculate(delta_x, delta_y, self.config)
-
-                head_yaw, head_pitch = (0.0, 0.0)
+                # --- 2. TRACKER -> RUST ---
+                hy, hp = 0.0, 0.0
                 if self.tracker and self.tracker.running:
-                    head_yaw, head_pitch = self.tracker.get_axes()
+                    hy, hp = self.tracker.get_axes()
+                    self.engine.update_tracker(float(hy), float(hp))
 
-                stats['at_limit'] = clamped_x or clamped_y
-                
-                # --- ENVIAR A RUST (AHORA CON 5 BOTONES) ---
-                self.rust_joy.update(
-                    final_x, final_y, self.throttle, self.rudder, 
-                    head_yaw, head_pitch,
-                    self.btn_trigger, self.btn_thumb, self.btn_top,
-                    self.btn_side1, self.btn_side2 
-                )
-
-                # --- ACTUALIZAR HUD (NUEVO FORMATO) ---
+                # --- 3. RUST -> HUD ---
                 if self.hud:
-                    self.hud.update(
-                        final_x, final_y,       # Stick
-                        self.throttle,          # Gases
-                        self.rudder,            # Timón
-                        head_yaw, head_pitch,   # Tracker (NUEVO)
-                        stats['in_deadzone'],   # Flags
-                        stats['is_snapped']
-                    )
+                    lx, ly, lt, lr, snap, dead = self.engine.get_hud_data()
+                    self.hud.update(lx, ly, lt, lr, hy, hp, dead, snap)
                 
-                time.sleep(0.005)
+                time.sleep(0.01)
 
-        except Exception as e:
-            import traceback
-            print("\n[MOTOR CRASH] DETECTADO:", flush=True)
-            traceback.print_exc()
-            time.sleep(5)
-            return "EXIT"
-            
         except KeyboardInterrupt:
+            print("\n[MOTOR] Interrupción (Ctrl+C)", flush=True)
             return "EXIT"
+        except Exception as e:
+            print(f"\n[MOTOR ERROR] {e}", flush=True)
+            traceback.print_exc()
+            return "EXIT"
+        finally:
+            self.cleanup()
 
     def cleanup(self):
-        print("[MOTOR] Liberando recursos...", flush=True)
+        if os.name == 'posix':
+            os.system("stty echo")
+        if self.engine:
+            self.engine.stop()
         if self.tracker: 
             self.tracker.stop()
-            self.tracker = None
-        if self.mouse_dev:
-            try: self.mouse_dev.ungrab()
-            except: pass
-            self.mouse_dev = None
         if self.hud:
             try: self.hud.close()
             except: pass
-            self.hud = None
-        self.rust_joy = None
-        print("[MOTOR] Limpieza completada.", flush=True)

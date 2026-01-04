@@ -10,5 +10,5 @@
     "t_deadzone": 0.1,
     "t_snap_axis": 0.25,
     "t_snap_outer": 0.1,
-    "t_center_drag": 0.01
+    "t_center_drag": 0.015
 }

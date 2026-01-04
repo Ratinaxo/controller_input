@@ -8,14 +8,17 @@ import pyautogui
 from pynput import mouse as pynput_mouse
 
 # --- IMPORTS DE LÓGICA ---
-from backend.inputs import InputPhysics
+# YA NO IMPORTAMOS backend.inputs.InputPhysics
+# Ahora usamos el poder de Rust directamente:
+import rust_motor 
+
 from backend.tracker import HeadTracker
 from utils.config import load_config, save_config
 
 # --- IMPORTS DE VISUALIZACIÓN ---
 from frontend.theme import apply_theme, COLOR_BG, COLOR_PANEL, COLOR_ACCENT, COLOR_WARN, FONT_BOLD, FONT_HEADER
 from frontend.widgets import ModernSlider
-from frontend.tooltips import create_help_icon  # <--- IMPORTAMOS LA NUEVA FUNCIÓN
+from frontend.tooltips import create_help_icon
 
 pyautogui.FAILSAFE = False
 
@@ -28,9 +31,20 @@ class ConfigLauncher:
         self.pressed_buttons = set()
         self.after_id = None
         self.tracker = None
+        
+        # --- INICIALIZAR FÍSICA RUST ---
+        # Creamos una instancia "dummy" inicial. Se actualizará en tiempo real.
+        try:
+            self.rust_physics = rust_motor.RustPhysics(
+                300.0, 1.0, 0.05, 0.1, 0.05, 50.0
+            )
+            print("[GUI] Motor físico Rust cargado para previsualización.")
+        except Exception as e:
+            print(f"[GUI CRITICAL] No se pudo cargar libreria Rust: {e}")
+            sys.exit(1)
 
         self.root = tk.Tk()
-        self.root.title("AeroController // Pro Configurator")
+        self.root.title("AeroController // Pro Configurator (RUST NATIVE)")
         self.root.geometry("1200x780")
         self.root.configure(bg=COLOR_BG)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close_window)
@@ -78,20 +92,13 @@ class ConfigLauncher:
         right_panel.pack(side='right', fill='both', expand=True)
         self._build_visualization_panel(right_panel)
 
-    # --- HELPER PARA CREAR SLIDER + ICONO ---
     def _add_slider_row(self, parent, text, min_v, max_v, step, val, key, cmd=None):
-        """Crea una fila con el Slider a la izquierda y el icono '?' a la derecha"""
         container = tk.Frame(parent, bg=COLOR_PANEL)
         container.pack(fill='x', padx=15, pady=2)
-        
-        # El Slider se expande
         slider = ModernSlider(container, text, min_v, max_v, step, val, cmd)
         slider.pack(side='left', fill='x', expand=True)
-        
-        # El Icono se queda fijo a la derecha (Alineado arriba para que coincida con el título del slider)
         icon = create_help_icon(container, key)
         icon.pack(side='right', padx=(10, 0), anchor='n', pady=5)
-        
         return slider
 
     def _build_tab_stick(self):
@@ -101,7 +108,6 @@ class ConfigLauncher:
         pad = 15
         tk.Label(tab, text="GEOMETRÍA", bg=COLOR_PANEL, fg=COLOR_ACCENT, font=FONT_HEADER).pack(anchor='w', padx=pad, pady=(pad, 5))
         
-        # Usamos el nuevo helper _add_slider_row
         self.s_radius = self._add_slider_row(tab, "Radio Máximo (px)", 100, 800, 10, self.current_config.get('radius', 300), "radius", self._update_curve_graph)
         self.s_outer  = self._add_slider_row(tab, "Zona Saturación Extra (px)", 0, 200, 5, self.current_config.get('outer', 50), "outer")
 
@@ -145,33 +151,23 @@ class ConfigLauncher:
     def _build_tab_system(self):
         tab = tk.Frame(self.notebook, bg=COLOR_PANEL)
         self.notebook.add(tab, text="💾 Sistema")
-        
         pad = 20
         tk.Label(tab, text="PERFILES", bg=COLOR_PANEL, fg=COLOR_ACCENT, font=FONT_HEADER).pack(anchor='w', padx=pad, pady=(pad, 10))
-        
-        tk.Button(tab, text="Guardar Perfil Como...", bg="#444", fg="white", 
-                  command=self._save_profile_dialog).pack(fill='x', padx=pad, pady=5)
-        tk.Button(tab, text="Cargar Perfil...", bg="#444", fg="white", 
-                  command=self._load_profile_dialog).pack(fill='x', padx=pad, pady=5)
-
+        tk.Button(tab, text="Guardar Perfil Como...", bg="#444", fg="white", command=self._save_profile_dialog).pack(fill='x', padx=pad, pady=5)
+        tk.Button(tab, text="Cargar Perfil...", bg="#444", fg="white", command=self._load_profile_dialog).pack(fill='x', padx=pad, pady=5)
         tk.Label(tab, text="Atajos:", bg=COLOR_PANEL, fg="gray").pack(anchor='w', padx=pad, pady=(20,5))
         tk.Label(tab, text="• ALT+P: Pausar/Configurar", bg=COLOR_PANEL, fg="white").pack(anchor='w', padx=pad)
         tk.Label(tab, text="• ALT/WIN + < : Recentrar", bg=COLOR_PANEL, fg="white").pack(anchor='w', padx=pad)
 
     def _build_visualization_panel(self, parent):
-        # 1. STICK PREVIEW
         frame_stick = tk.Frame(parent, bg=COLOR_BG)
         frame_stick.pack(fill='both', expand=True, padx=10, pady=10)
         tk.Label(frame_stick, text="STICK PREVIEW", bg=COLOR_BG, fg="#888", font=FONT_BOLD).pack()
-        
         self.canvas_size = 250
         self.center_pt = self.canvas_size // 2
         self.vis_scale = 70
-        
-        self.canvas = tk.Canvas(frame_stick, width=self.canvas_size, height=self.canvas_size, 
-                                bg="#000", highlightthickness=1, highlightbackground="#333")
+        self.canvas = tk.Canvas(frame_stick, width=self.canvas_size, height=self.canvas_size, bg="#000", highlightthickness=1, highlightbackground="#333")
         self.canvas.pack(pady=5)
-        
         limit = self.vis_scale
         c = self.center_pt
         self.canvas.create_rectangle(c - limit, c - limit, c + limit, c + limit, outline="#444", dash=(2, 4))
@@ -179,32 +175,23 @@ class ConfigLauncher:
         self.canvas.create_line(0, c, self.canvas_size, c, fill="#222")
         self.dot = self.canvas.create_oval(0,0,0,0, fill=COLOR_WARN)
 
-        # 2. TRACKER PREVIEW
         frame_head = tk.Frame(parent, bg=COLOR_BG)
         frame_head.pack(fill='both', expand=True, padx=10, pady=10)
         tk.Label(frame_head, text="TRACKER PREVIEW", bg=COLOR_BG, fg="#888", font=FONT_BOLD).pack()
-        
-        self.canvas_head = tk.Canvas(frame_head, width=self.canvas_size, height=150, 
-                                     bg="#000", highlightthickness=1, highlightbackground="#333")
+        self.canvas_head = tk.Canvas(frame_head, width=self.canvas_size, height=150, bg="#000", highlightthickness=1, highlightbackground="#333")
         self.canvas_head.pack(pady=5)
-        
-        tk.Button(frame_head, text="🎯 RECENTRAR CABEZA", bg="#444", fg="white", font=("Segoe UI", 8, "bold"),
-                  relief="flat", command=self.safe_recenter).pack(side='bottom', fill='x', padx=60, pady=(0, 10))
-
+        tk.Button(frame_head, text="🎯 RECENTRAR CABEZA", bg="#444", fg="white", font=("Segoe UI", 8, "bold"), relief="flat", command=self.safe_recenter).pack(side='bottom', fill='x', padx=60, pady=(0, 10))
         hc, vc = self.canvas_size // 2, 75
         self.canvas_head.create_line(hc, 0, hc, 150, fill="#222")
         self.canvas_head.create_line(0, vc, self.canvas_size, vc, fill="#222")
         self.head_dot = self.canvas_head.create_oval(0,0,0,0, fill=COLOR_ACCENT)
 
-        # 3. INPUTS & BUTTONS
         tk.Label(parent, text="RAW INPUTS", bg=COLOR_BG, fg="#888", font=FONT_BOLD).pack(pady=(10,0))
         self.pb_throttle = ttk.Progressbar(parent, orient="horizontal", mode="determinate")
         self.pb_throttle.pack(fill='x', padx=30, pady=5)
-        
         self.canvas_rudder = tk.Canvas(parent, height=15, bg="#333", highlightthickness=0)
         self.canvas_rudder.pack(fill='x', padx=30, pady=5)
         self.rudder_ind = self.canvas_rudder.create_rectangle(0,0,0,0, fill="#ff00ff")
-
         self.btn_container = tk.Frame(parent, bg=COLOR_BG)
         self.btn_container.pack(pady=10)
         self.btn_widgets = {}
@@ -214,12 +201,10 @@ class ConfigLauncher:
             lbl.pack(side='left', padx=2)
             self.btn_widgets[code] = lbl
 
-    # --- LOGIC ---
     def safe_recenter(self):
         if self.tracker: self.tracker.recenter()
 
     def _update_curve_graph(self, val=None):
-        # val es opcional porque sliders a veces mandan el valor, a veces no.
         w = self.curve_canvas.winfo_width()
         if w < 10: w = 350
         h = 100
@@ -254,16 +239,32 @@ class ConfigLauncher:
             cfg = self._get_current_config()
             if self.tracker: self.tracker.update_config(cfg)
 
+            # --- PREVISUALIZACIÓN USANDO RUST ---
+            # 1. Actualizamos los parámetros de la física Rust en tiempo real
+            self.rust_physics.update_config(
+                float(cfg['radius']),
+                float(cfg['curve']),
+                float(cfg['deadzone']),
+                float(cfg.get('t_snap_axis', 0.25)), # Mapeo de nombre de config a Rust
+                float(cfg['snap']),
+                float(cfg['outer'])
+            )
+
+            # 2. Obtenemos posición mouse
             mx, my = pyautogui.position()
             dx = mx - (self.screen_w // 2)
             dy = my - (self.screen_h // 2)
-            fx, fy, stats = InputPhysics.calculate(dx, dy, cfg)
 
+            # 3. CALCULAMOS (¡En Rust!)
+            # Rust devuelve: (final_x, final_y, in_deadzone, is_snapped)
+            fx, fy, in_deadzone, is_snapped = self.rust_physics.calculate(float(dx), float(dy))
+
+            # 4. Dibujar
             vs = self.vis_scale
             self.canvas.coords(self.dot, 
                                self.center_pt + (fx * vs) - 6, self.center_pt + (fy * vs) - 6,
                                self.center_pt + (fx * vs) + 6, self.center_pt + (fy * vs) + 6)
-            self.canvas.itemconfig(self.dot, fill="#555" if stats['in_deadzone'] else COLOR_WARN)
+            self.canvas.itemconfig(self.dot, fill="#555" if in_deadzone else COLOR_WARN)
 
             if self.tracker:
                 tx, ty = self.tracker.get_axes()
@@ -272,10 +273,8 @@ class ConfigLauncher:
                 self.canvas_head.coords(self.head_dot, hx-5, hy-5, hx+5, hy+5)
 
             self.pb_throttle['value'] = ((self.live_throttle + 1) / 2) * 100
-            
             if abs(self.live_rudder) > 0.01:
                 self.live_rudder += 0.01 if self.live_rudder < 0 else -0.01
-            
             rw = self.canvas_rudder.winfo_width()
             rc = rw // 2
             rlen = self.live_rudder * (rw // 2 - 5)
@@ -285,7 +284,9 @@ class ConfigLauncher:
                 is_p = any(code in p for p in self.pressed_buttons)
                 widget.configure(bg=COLOR_ACCENT if is_p else "#333", fg="black" if is_p else "white")
 
-        except Exception: pass
+        except Exception as e: 
+            pass # Evita spam en consola si algo falla en el loop de dibujo
+            
         self.after_id = self.root.after(16, self.update_ui)
 
     def _save_profile_dialog(self):
@@ -306,7 +307,6 @@ class ConfigLauncher:
                 self.s_deadzone.set(cfg.get('deadzone', 0.05))
                 self.s_snap.set(cfg.get('snap', 0.05))
                 self.s_outer.set(cfg.get('outer', 50))
-                
                 self.t_sens_x.set(cfg.get('t_sens_x', 10.0))
                 self.t_sens_y.set(cfg.get('t_sens_y', 10.0))
                 self.t_smooth.set(cfg.get('t_smooth', 0.5))
@@ -314,7 +314,6 @@ class ConfigLauncher:
                 self.t_snap_axis.set(cfg.get('t_snap_axis', 0.25))
                 self.t_snap_outer.set(cfg.get('t_snap_outer', 0.10))
                 self.t_center_drag.set(cfg.get('t_center_drag', 0.005))
-                
                 self._update_curve_graph()
             except Exception as e: messagebox.showerror("Error", str(e))
 
