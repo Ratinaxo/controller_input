@@ -1,0 +1,26 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+
+# Added by cargo
+target/
+
+#Unused model
+blaze_face_short_range.tflite
+
+# scripts y otros
+*.sh
+
+# Artefactos de ejecución/depuración (se regeneran solos)
+run.log
+depth_probe.csv
+depth_probe.png
+config.json

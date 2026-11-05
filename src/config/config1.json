@@ -1,0 +1,102 @@
+{
+    "radius": 320,
+    "curve": 1.0,
+    "deadzone": 0.07,
+    "snap": 0.01,
+    "outer": 30,
+    "t_sens_x": 10.0,
+    "t_sens_y": 10.0,
+    "t_min_cutoff": 1.0,
+    "t_beta": 0.05,
+    "t_deadzone": 0.1,
+    "t_snap_axis": 0.05,
+    "t_snap_outer": 0.3,
+    "t_center_drag": 0.001,
+    "cam_rotation": 180,
+    "head_source": "internal",
+    "t_trans_sens_x": 10.0,
+    "t_trans_sens_y": 10.0,
+    "t_trans_sens_z": 10.0,
+    "t_trans_deadzone_x": 0.03,
+    "t_trans_deadzone_y": 0.03,
+    "t_trans_deadzone_z": 0.06,
+    "t_trans_curve_x": 1.5,
+    "t_trans_curve_y": 1.5,
+    "t_trans_curve_z": 1.5,
+    "t_trans_invert_x": false,
+    "t_trans_invert_y": true,
+    "t_trans_invert_z": false,
+    "t_trans_min_cutoff": 0.8,
+    "t_trans_beta": 0.02,
+    "t_trans_min_cutoff_z": 0.4,
+    "t_trans_beta_z": 0.01,
+    "t_neck_height_cm": 10.0,
+    "t_neck_depth_cm": 10.0,
+    "t_sens_roll": 10.0,
+    "t_roll_deadzone": 0.03,
+    "head_roll_limit_deg": 30.0,
+    "controller_profile": "thrustmaster_t16000m",
+    "button_map": {},
+    "telemetry_enabled": false,
+    "head_limit_points": [
+        {
+            "label": "up",
+            "angle_deg": 254.21883079325593,
+            "magnitude": 10.242472577232501,
+            "units": "deg"
+        },
+        {
+            "label": "down",
+            "angle_deg": 93.54581677434797,
+            "magnitude": 18.88241884246771,
+            "units": "deg"
+        },
+        {
+            "label": "left",
+            "angle_deg": 208.54547678698242,
+            "magnitude": 15.819115185454203,
+            "units": "deg"
+        },
+        {
+            "label": "right",
+            "angle_deg": 340.18057645701015,
+            "magnitude": 20.632877571689907,
+            "units": "deg"
+        },
+        {
+            "label": "diag_up_left",
+            "angle_deg": 232.3522419587067,
+            "magnitude": 21.76357165627555,
+            "units": "deg"
+        },
+        {
+            "label": "diag_up_right",
+            "angle_deg": 316.58696051767595,
+            "magnitude": 22.709659342468093,
+            "units": "deg"
+        },
+        {
+            "label": "diag_down_left",
+            "angle_deg": 156.040911724547,
+            "magnitude": 15.898730137390874,
+            "units": "deg"
+        },
+        {
+            "label": "diag_down_right",
+            "angle_deg": 29.247181873293655,
+            "magnitude": 17.948207279988956,
+            "units": "deg"
+        }
+    ],
+    "head_trans_limits": {
+        "units": "cm",
+        "x_pos": 2.5489904403686525,
+        "x_neg": 2.5688815116882324,
+        "y_pos": 2.038250541687012,
+        "y_neg": 3.980953025817871,
+        "z_pos": 10.180041122436524,
+        "z_neg": 6.471305084228516
+    },
+    "mouse_phys": "usb-0000:00:14.0-1/input0",
+    "keyboard_phys": "usb-0000:00:14.0-5/input0"
+}

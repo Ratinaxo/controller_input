@@ -1,0 +1,38 @@
+{
+  "id": "thrustmaster_t16000m",
+  "display_name": "Thrustmaster T.16000M FCS",
+  "type": "joystick",
+  "notes": "Perfil de referencia del mando físico real. Describe SOLO la forma del dispositivo (qué ejes/botones tiene y con qué código evdev se identifica cada uno). Los 16 botones usan los códigos consecutivos 0x120-0x12F que asigna el driver hid-input del kernel; 0x12C-0x12E no tienen nombre en evdev y van en hexadecimal. Deben coincidir con BUTTON_CODES en motor_rust/src/device.rs. El mapeo de qué tecla o botón de mouse dispara cada botón vive en config.json, bajo 'button_map'.",
+
+  "axes": [
+    { "id": "x",       "code": "ABS_X",  "name": "Roll / Stick X" },
+    { "id": "y",       "code": "ABS_Y",  "name": "Pitch / Stick Y" },
+    { "id": "twist",   "code": "ABS_RZ", "name": "Twist (Rudder)" },
+    { "id": "slider",  "code": "ABS_THROTTLE", "name": "Slider (Throttle)" }
+  ],
+
+  "hat": {
+    "x_code": "ABS_HAT0X",
+    "y_code": "ABS_HAT0Y",
+    "name": "POV Hat (8 direcciones)"
+  },
+
+  "buttons": [
+    { "id": 1,  "code": "BTN_TRIGGER", "name": "Trigger" },
+    { "id": 2,  "code": "BTN_THUMB",   "name": "Botón 2 (Pulgar)" },
+    { "id": 3,  "code": "BTN_THUMB2",  "name": "Botón 3" },
+    { "id": 4,  "code": "BTN_TOP",     "name": "Botón 4" },
+    { "id": 5,  "code": "BTN_TOP2",    "name": "Botón 5" },
+    { "id": 6,  "code": "BTN_PINKIE",  "name": "Botón 6" },
+    { "id": 7,  "code": "BTN_BASE",    "name": "Botón 7" },
+    { "id": 8,  "code": "BTN_BASE2",   "name": "Botón 8" },
+    { "id": 9,  "code": "BTN_BASE3",   "name": "Botón 9" },
+    { "id": 10, "code": "BTN_BASE4",   "name": "Botón 10" },
+    { "id": 11, "code": "BTN_BASE5",   "name": "Botón 11" },
+    { "id": 12, "code": "BTN_BASE6",   "name": "Botón 12" },
+    { "id": 13, "code": "0x12c",       "name": "Botón 13" },
+    { "id": 14, "code": "0x12d",       "name": "Botón 14" },
+    { "id": 15, "code": "0x12e",       "name": "Botón 15" },
+    { "id": 16, "code": "BTN_DEAD",    "name": "Botón 16" }
+  ]
+}

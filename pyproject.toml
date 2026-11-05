@@ -1,0 +1,20 @@
+[project]
+name = "controller-input"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+dependencies = [
+    "evdev>=1.9.2",
+    "matplotlib>=3.11.2",
+    "maturin>=1.10.2",
+    "mediapipe>=0.10.31",
+    "numpy>=2.2.6",
+    "opencv-python>=4.12.0.88",
+    "pandas>=3.0.5",
+    # La vista de cámara de la GUI la usa para pasar el frame a Tk.
+    # Ya venía instalada porque matplotlib la arrastra, pero ahora el
+    # programa depende de ella de verdad: va declarada.
+    "pillow>=10.0.0",
+]
